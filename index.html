@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Mi Lotificación Interactiva</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable-no">
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.0.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.0.0/mapbox-gl.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<script>
+    // TU TOKEN DE ACCESO
+    mapboxgl.accessToken = 'pk.eyJ1IjoibWFxbGVlbXgiLCJhIjoiY21oOGxka2szMGNucTJrcHllcWxkdm16aiJ9.OBNZDRRAC7D4BTeVUUAU3w'; 
+    
+    // --- CAMBIO 1: La base de datos ahora será un Array ---
+    // En lugar de un objeto, guardaremos una LISTA (Array) de todos los lotes
+    let baseDeDatosLotes = [];
+
+    // ¡¡IMPORTANTE!! Pega aquí la URL de tu Google Sheet publicada como .csv
+    const urlGoogleSheet = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSXJD6orzGSqIEi7X4pda908wn_IyP9lrUzkLmC4SdkjEpMxziEog9XlLdYQCGUznL8JwLHUefDBDD4/pub?gid=0&single=true&output=csv';
+
+    const map = new mapboxgl.Map({ 
+        container: 'map', // ID del div
+        style: 'mapbox://styles/maqleemx/cmh9idn5p009r01ra9hqh128w', // URL de tu estilo
+        center: [-117.0005, 32.2935], // Coordenadas
+        zoom: 15 // Zoom inicial
+    });
+
+    // --- CÓDIGO DE GEOLOCALIZACIÓN (Sin cambios) ---
+    const geolocate = new mapboxgl.GeolocateControl({
+        positionOptions: {
+            enableHighAccuracy: true
+        },
+        trackUserLocation: true, 
+        showUserHeading: true
+    });
+    map.addControl(geolocate);
+    // --- TERMINA CÓDIGO DE GEOLOCALIZACIÓN ---
+
+
+    // --- AQUÍ EMPIEZA LA MAGIA DE LA INTERACTIVIDAD ---
+
+    map.on('load', () => {
+
+        // --- CÓDIGO PARA COLORES (Sin cambios) ---
+        map.setPaintProperty(
+            'mapa4', 'fill-color', 
+            [
+                'match', 
+                ['get', 'STATUS'], 
+                1, '#28a745', 
+                2, '#fd7e14', 
+                3, '#dc3545', 
+                '#808080' 
+            ]
+        );
+        // --- TERMINA CÓDIGO PARA COLORES ---
+
+        
+        // --- CAMBIO 2: Lógica para cargar datos ---
+        Papa.parse(urlGoogleSheet, {
+            download: true,
+            header: true, // Usa la Fila 1 (LOTE, MZA, etc.) como nombres
+            complete: (results) => {
+                // Simplemente guardamos todos los datos (todas las filas) en nuestro array
+                baseDeDatosLotes = results.data;
+                console.log("Base de datos de Google Sheets cargada:", baseDeDatosLotes);
+            },
+            error: (err) => {
+                console.error("Error al cargar datos de Google Sheets:", err);
+            }
+        });
+        // --- FIN DE LÓGICA DE DATOS ---
+
+
+        // --- CAMBIO 3: LÓGICA DE CLICK (¡La parte más importante!) ---
+        // Ahora buscará usando MZA y LOTE
+        map.on('click', 'mapa4', (e) => {
+            
+            // 1. Obtenemos AMBAS propiedades del lote en el que se hizo clic
+            const properties = e.features[0].properties;
+            const mzaDelMapa = Number(properties.MZA);  // Ej. 2
+            const loteDelMapa = Number(properties.LOTE); // Ej. 5
+
+            // 2. Buscamos en nuestro ARRAY el lote que coincida con AMBOS valores
+            // Usamos .find() para buscar en la lista
+            const datosDelLote = baseDeDatosLotes.find(lote => {
+                // Comparamos el MZA y LOTE de la fila de Google Sheets
+                // con los valores del lote del mapa
+                return Number(lote.MZA) === mzaDelMapa && Number(lote.LOTE) === loteDelMapa;
+            });
+
+            // 3. Si no encontramos datos, no hacemos nada
+            if (!datosDelLote) {
+                console.warn(`No se encontraron datos en Google Sheets para: MZA ${mzaDelMapa}, LOTE ${loteDelMapa}`);
+                return;
+            }
+            
+            // --- Lógica para traducir el Estatus (Sin cambios, ya usa 'datosDelLote') ---
+            let estatusTexto = 'No definido'; 
+            const statusNum = Number(datosDelLote.STATUS); 
+
+            if (statusNum === 1) {
+                estatusTexto = 'Disponible';
+            } else if (statusNum === 2) {
+                estatusTexto = 'Apartado';
+            } else if (statusNum === 3) {
+                estatusTexto = 'Vendido';
+            }
+            // --- Fin de la lógica del Estatus ---
+
+
+            // 4. Construye el Pop-up (Sin cambios, ya usa 'datosDelLote')
+            const htmlPopup = `
+                <h3>Lote: ${datosDelLote.LOTE || 'N/A'}</h3>
+                <p><strong>Mza:</strong> ${datosDelLote.MZA || 'N/A'}</p>
+                <p><strong>Área:</strong> ${ parseFloat(datosDelLote.AREA).toFixed(2) } m²</p>
+                <p><strong>Estatus:</strong> ${estatusTexto}</p>
+            `;
+            // --- FIN DE LA MODIFICACIÓN ---
+
+            // Crea el pop-up y lo añade al mapa
+            new mapboxgl.Popup()
+                .setLngLat(e.lngLat) // Posición del clic
+                .setHTML(htmlPopup) // Contenido HTML
+                .addTo(map);
+        });
+
+        // --- CÓDIGO DEL CURSOR (Sin cambios) ---
+        map.on('mouseenter', 'mapa4', () => {
+            map.getCanvas().style.cursor = 'pointer';
+        });
+
+        map.on('mouseleave', 'mapa4', () => {
+            map.getCanvas().style.cursor = '';
+        });
+    });
+</script>
+
+</body>
+</html>
